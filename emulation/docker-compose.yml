@@ -1,0 +1,12 @@
+version: '3.8'
+
+services:
+  mininet:
+    build: .
+    privileged: true
+    network_mode: "host"
+    volumes:
+      - /lib/modules:/lib/modules:ro
+      - .:/emulation
+    stdin_open: true # docker run -i
+    tty: true        # docker run -t

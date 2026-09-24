@@ -1,0 +1,22 @@
+# Environments
+venv/
+env/
+.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+
+# OS
+.DS_Store
+
+# Archives
+*.zip
+*.tar.gz
+
+# Data & Models (Optional, but good to ignore massive files)
+# For now, we allow the small CSVs and models to sync.
+# data/*.parquet
