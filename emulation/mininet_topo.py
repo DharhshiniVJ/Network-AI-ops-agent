@@ -416,7 +416,7 @@ def run_emulation():
     recovery_phase(collector, duration=480, label='Post-Flap Recovery')
 
     # ── Phase 4: MTU Mismatch (3 min) ─────────────────────────────────────
-    inject_mtu_mismatch(net, collector, intf_name='s1-eth5', mtu=500, duration=180)
+    inject_mtu_mismatch(net, collector, intf_name='l1-eth2', mtu=500, duration=180)
     recovery_phase(collector, duration=480, label='Post-MTU Recovery')
 
     # ── Phase 5: Packet Loss (3 min) ──────────────────────────────────────
