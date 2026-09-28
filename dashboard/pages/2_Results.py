@@ -61,7 +61,8 @@ with tab_ml:
             text=[[f"{cm[i][j]:,}" for j in range(2)] for i in range(2)],
             texttemplate='%{text}', showscale=False
         ))
-        fig_cm.update_layout(**PLOTLY_TEMPLATE['layout'], title='RF Confusion Matrix', height=300)
+        fig_cm.update_layout(PLOTLY_TEMPLATE['layout'])
+        fig_cm.update_layout(title='RF Confusion Matrix', height=300)
         st.plotly_chart(fig_cm, use_container_width=True)
         
     with col_recall:
@@ -71,7 +72,8 @@ with tab_ml:
         fdf = pd.DataFrame(rows).sort_values('Recall')
         fig_ft = px.bar(fdf, x='Recall', y='Fault', orientation='h', color='Fault',
                         color_discrete_map=FAULT_COLORS, text=fdf['Recall'].map(lambda x: f"{x:.1%}"))
-        fig_ft.update_layout(**PLOTLY_TEMPLATE['layout'], title='RF Recall per Fault', showlegend=False, height=300)
+        fig_ft.update_layout(PLOTLY_TEMPLATE['layout'])
+        fig_ft.update_layout(title='RF Recall per Fault', showlegend=False, height=300)
         fig_ft.update_traces(textposition='outside')
         st.plotly_chart(fig_ft, use_container_width=True)
 
@@ -96,14 +98,16 @@ with tab_ml:
         
         fig_mse = px.histogram(s, x='mse', color='label', barmode='overlay', nbins=80,
                                color_discrete_map={'Normal':'#6366F1', 'Anomaly':'#EF4444'})
-        fig_mse.update_layout(**PLOTLY_TEMPLATE['layout'], title='MSE Distribution', height=300)
+        fig_mse.update_layout(PLOTLY_TEMPLATE['layout'])
+        fig_mse.update_layout(title='MSE Distribution', height=300)
         st.plotly_chart(fig_mse, use_container_width=True)
 
     with col_roc:
         fpr, tpr, _ = roc_curve(y_true, scores)
         fig_roc = go.Figure(go.Scatter(x=fpr, y=tpr, fill='tozeroy', line=dict(color='#F97316', width=2)))
         fig_roc.add_trace(go.Scatter(x=[0,1], y=[0,1], line=dict(dash='dash', color='#475569')))
-        fig_roc.update_layout(**PLOTLY_TEMPLATE['layout'], title='ROC Curve', height=300, showlegend=False)
+        fig_roc.update_layout(PLOTLY_TEMPLATE['layout'])
+        fig_roc.update_layout(title='ROC Curve', height=300, showlegend=False)
         st.plotly_chart(fig_roc, use_container_width=True)
 
 
@@ -143,14 +147,16 @@ with tab_agent:
             
             fig_a = px.bar(adf, x='Category', y='Accuracy', color='Category',
                            color_discrete_map={**FAULT_COLORS, 'FP Rejection':'#10B981'}, text_auto='.0f')
-            fig_a.update_layout(**PLOTLY_TEMPLATE['layout'], title='Accuracy by Fault Type', height=320, showlegend=False)
+            fig_a.update_layout(PLOTLY_TEMPLATE['layout'])
+            fig_a.update_layout(title='Accuracy by Fault Type', height=320, showlegend=False)
             st.plotly_chart(fig_a, use_container_width=True)
 
         with col_tools:
             tdf = df_r.groupby('ground_truth')['tool_calls'].mean().reset_index()
             fig_t = px.bar(tdf, x='tool_calls', y='ground_truth', orientation='h', color='ground_truth',
                            color_discrete_map={**FAULT_COLORS, 'none':'#10B981'}, text_auto='.1f')
-            fig_t.update_layout(**PLOTLY_TEMPLATE['layout'], title='Avg Tool Calls Used', height=320, showlegend=False)
+            fig_t.update_layout(PLOTLY_TEMPLATE['layout'])
+            fig_t.update_layout(title='Avg Tool Calls Used', height=320, showlegend=False)
             st.plotly_chart(fig_t, use_container_width=True)
             
         st.divider()

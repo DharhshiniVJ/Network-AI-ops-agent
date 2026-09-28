@@ -28,7 +28,8 @@ class NetworkFeaturePipeline:
             "rolling_mean_in", "rolling_std_in", "zscore_in_octets",
             "rolling_mean_out", "rolling_std_out", "zscore_out_octets",
             "rolling_mean_disc", "rolling_std_disc", "zscore_out_discards",
-            "in_out_ratio", "discard_intensity"
+            "in_out_ratio", "discard_intensity",
+            "error_rate", "burst_ratio",
         ]
         
     def get_feature_names(self) -> List[str]:
@@ -93,8 +94,14 @@ class NetworkFeaturePipeline:
         df["zscore_out_discards"] = (df["ifOutDiscards"] - df["rolling_mean_disc"]) / (df["rolling_std_disc"] + 1e-5)
         
         # Domain ratios
-        df["in_out_ratio"] = (df["ifInOctets"] + 1) / (df["ifOutOctets"] + 1)
+        df["in_out_ratio"]    = (df["ifInOctets"] + 1) / (df["ifOutOctets"] + 1)
         df["discard_intensity"] = (df["ifOutDiscards"] + df["ifInDiscards"]) / ((df["ifInOctets"] / 1000) + 1)
+
+        # error_rate: normalise errors by traffic volume — catches MTU mismatch cleanly
+        df["error_rate"] = (df["ifInErrors"] + 1) / (df["ifInOctets"] + 1)
+
+        # burst_ratio: current delta relative to rolling mean — stronger congestion signal
+        df["burst_ratio"] = df["delta_in_octets"].abs() / (df["rolling_mean_in"] + 1)
         
         # Fill missing values created by shifts/rolling if any
         df = df.fillna(0)
