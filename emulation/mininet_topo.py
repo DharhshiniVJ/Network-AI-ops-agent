@@ -303,7 +303,8 @@ def inject_congestion(net, collector, intf_name='s2-eth2',
     info(f"  INJECTING FAULT: congestion (tc netem on {intf_name})\n")
     info(f"{'='*55}\n")
     collector.set_fault('congestion')
-    os.system(f'tc qdisc add dev {intf_name} root netem delay {delay_ms}ms '
+    # 'replace' creates or replaces existing qdisc — avoids Exclusivity flag on OVS ports
+    os.system(f'tc qdisc replace dev {intf_name} root netem delay {delay_ms}ms '
               f'{delay_ms//4}ms distribution normal loss 5%')
     time.sleep(duration)
     os.system(f'tc qdisc del dev {intf_name} root 2>/dev/null')
@@ -318,7 +319,7 @@ def inject_interface_flap(net, collector, switch_a='s1', switch_b='l2',
     info(f"{'='*55}\n")
     collector.set_fault('interface_flap')
     end_time = time.time() + duration
-    state = True   # True = up, False = down
+    state = True
     while time.time() < end_time:
         status = 'up' if state else 'down'
         net.configLinkStatus(switch_a, switch_b, status)
@@ -328,9 +329,12 @@ def inject_interface_flap(net, collector, switch_a='s1', switch_b='l2',
     info(f"*** Interface flap on {switch_a}↔{switch_b} stopped\n")
 
 
-def inject_mtu_mismatch(net, collector, intf_name='s1-eth5',
+def inject_mtu_mismatch(net, collector, intf_name='l1-eth2',
                         mtu=500, duration=300):
-    """Phase 4: Force MTU to 500 bytes causing fragmentation errors."""
+    """Phase 4: Force MTU to 500 bytes on a leaf-spine uplink (l1-eth2).
+    s1-eth5 does not exist — s1 has only eth1-eth4 in a 4-leaf topology.
+    l1-eth2 is the l1 -> s1 uplink and always exists.
+    """
     info(f"\n{'='*55}\n")
     info(f"  INJECTING FAULT: mtu_mismatch (MTU={mtu} on {intf_name})\n")
     info(f"{'='*55}\n")
@@ -348,7 +352,8 @@ def inject_packet_loss(net, collector, intf_name='s2-eth4',
     info(f"  INJECTING FAULT: packet_loss ({loss_pct}% on {intf_name})\n")
     info(f"{'='*55}\n")
     collector.set_fault('packet_loss')
-    os.system(f'tc qdisc add dev {intf_name} root netem loss {loss_pct}%')
+    # 'replace' creates or replaces existing qdisc — avoids Exclusivity flag on OVS ports
+    os.system(f'tc qdisc replace dev {intf_name} root netem loss {loss_pct}%')
     time.sleep(duration)
     os.system(f'tc qdisc del dev {intf_name} root 2>/dev/null')
     info(f"*** Packet loss on {intf_name} cleared\n")
