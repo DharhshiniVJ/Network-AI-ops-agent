@@ -165,6 +165,13 @@ class TelemetryCollector(threading.Thread):
         self._probe_thread        = threading.Thread(target=self._probe_loop, daemon=True)
         self._probe_thread.start()
 
+        # Live CSV streaming — flushed every FLUSH_INTERVAL seconds for demo pipeline
+        self.live_csv      = 'mininet_telemetry_live.csv'
+        self._flush_every  = 5     # seconds
+        self._last_flush   = 0
+        self._flushed_rows = 0
+        self._csv_header_written = False
+
     def _probe_loop(self):
         """Runs continuous ping probes in background — non-blocking on collector."""
         while self.running:
@@ -173,7 +180,6 @@ class TelemetryCollector(threading.Thread):
                     f'ping -c 5 -W 1 -q {self.probe_target_ip}')
                 for line in result.split('\n'):
                     if 'rtt' in line and 'avg' in line:
-                        # rtt min/avg/max/mdev = 0.5/0.6/0.8/0.1 ms
                         avg_ms = float(line.split('/')[4])
                         self._latest_latency_ms = avg_ms
                     if '% packet loss' in line:
@@ -181,13 +187,27 @@ class TelemetryCollector(threading.Thread):
                         self._latest_packet_loss = pct / 100.0
             except Exception:
                 pass
-            time.sleep(3)   # probe every 3 seconds
+            time.sleep(3)
+
+    def _flush_live_csv(self):
+        """Append any unflushed rows to the live CSV file."""
+        new_rows = self.data[self._flushed_rows:]
+        if not new_rows:
+            return
+        import csv, os
+        write_header = not self._csv_header_written
+        with open(self.live_csv, 'a', newline='') as f:
+            writer = csv.DictWriter(f, fieldnames=new_rows[0].keys())
+            if write_header:
+                writer.writeheader()
+                self._csv_header_written = True
+            writer.writerows(new_rows)
+        self._flushed_rows = len(self.data)
 
     def run(self):
         while self.running:
             ts          = datetime.now(timezone.utc)
             cpu_util    = read_cpu_utilization()
-            # Use non-blocking background probe values (updated every 3s)
             latency_ms  = self._latest_latency_ms
             packet_loss = self._latest_packet_loss
 
@@ -212,6 +232,12 @@ class TelemetryCollector(threading.Thread):
                         'is_anomaly'       : self.current_is_anomaly,
                         'anomaly_type'     : self.current_anomaly_type,
                     })
+
+            # Flush to live CSV every FLUSH_INTERVAL seconds
+            now = time.time()
+            if now - self._last_flush >= self._flush_every:
+                self._flush_live_csv()
+                self._last_flush = now
 
             time.sleep(self.POLL_INTERVAL)
 
