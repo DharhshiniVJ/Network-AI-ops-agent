@@ -106,18 +106,11 @@ def finetune_lstm(train_df, val_df, test_df):
     print("  TIER 2: Fine-Tuning LSTM-Autoencoder")
     print("=" * 60)
 
-    if os.path.exists(SIMULATED_LSTM_PATH):
-        lstm = torch.load(SIMULATED_LSTM_PATH, map_location='cpu', weights_only=False)
-        lstm.device = torch.device('cpu')
-        if hasattr(lstm, 'model'):
-            lstm.model.to('cpu')
-        print(f"    Loaded pre-trained model. Original threshold: {lstm.optimal_threshold:.6f}")
-    else:
-        print("    Pre-trained model not found — training LSTM from scratch on Mininet data.")
-        lstm = LSTMAutoencoderDetector(seq_len=10, epochs=50)
-        clean_init = train_df[train_df['is_anomaly'] == 0].copy()
-        lstm.train(clean_init, val_df)
-        print(f"    Training complete. Threshold: {lstm.optimal_threshold:.6f}")
+    print("    Training LSTM from scratch on Mininet data.")
+    lstm = LSTMAutoencoderDetector(seq_len=10, epochs=50)
+    clean_init = train_df[train_df['is_anomaly'] == 0].copy()
+    lstm.train(clean_init, val_df)
+    print(f"    Training complete. Threshold: {lstm.optimal_threshold:.6f}")
 
     # FIX 1a: Zero out broken/dummy features before any scaling
     # CRITICAL: We must use a CONTIGUOUS block of normal traffic to prevent
