@@ -285,7 +285,10 @@ def adapt_random_forest(train_df, val_df, test_df):
 
 def save_and_summarize(rf, lstm, rf_m, lstm_m):
     os.makedirs(OUT_DIR, exist_ok=True)
-    joblib.dump(rf,  os.path.join(OUT_DIR, 'random_forest.pkl'))
+    try:
+        joblib.dump(rf, os.path.join(OUT_DIR, 'random_forest.pkl'))
+    except Exception as e:
+        print(f"    [warn] Could not save RF model: {e}")
     torch.save(lstm, os.path.join(OUT_DIR, 'lstm_autoencoder.pth'))
 
     print("\n" + "=" * 60)
