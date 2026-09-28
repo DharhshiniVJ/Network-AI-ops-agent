@@ -329,7 +329,8 @@ if __name__ == "__main__":
                         help="Replay speed multiplier (default 15×)")
     args = parser.parse_args()
 
-    os.environ.setdefault("GOOGLE_API_KEY", "AIzaSyBdJBuUSwigbawCtyqZ7kSsDTBT8NEYn0A")
+    if not os.environ.get("GOOGLE_API_KEY"):
+        raise EnvironmentError("Set GOOGLE_API_KEY before running: export GOOGLE_API_KEY=your_key")
 
     rf_model, lstm_model = load_models()
 
