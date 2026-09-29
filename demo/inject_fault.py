@@ -51,17 +51,13 @@ def update_state(fault: str):
         state = {}
 
     if fault == "recover":
-        state["injected_fault"] = None
+        state["injected_fault"] = "recover"
         state["rca_report"]     = None
         state["agent_steps"]    = []
-        state["alerts"]         = []
+        state["rf_verdict"]     = None
+        state["lstm_verdict"]   = None
     else:
-        state["injected_fault"] = {
-            "name":        fault,
-            "description": FAULT_DESCRIPTIONS[fault],
-            "color":       FAULT_COLORS[fault],
-            "injected_at": str(datetime.now()),
-        }
+        state["injected_fault"] = fault
 
     state["last_update"] = str(datetime.now())
 
