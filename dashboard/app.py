@@ -266,15 +266,18 @@ with col1:
 
     # Tier 2 — LSTM
     if lstm_v:
+        mse = lstm_v.get("mse", 0)
         ratio = lstm_v.get("ratio", 0)
+        mse_str = f"{mse:.4e}" if mse > 0.01 else f"{mse:.6f}"
+        ratio_str = f"{ratio:.1f}×" if ratio < 1e6 else "far above"
         st.markdown(f"""
         <div class='detect-card detect-done'>
           <div class='detect-label' style='color:#6366F1;'>Tier 2 · LSTM Autoencoder</div>
           <div class='detect-result' style='color:#6366F1;'>ANOMALY CONFIRMED</div>
           <div class='detect-sub'>
-            MSE: <b style='color:#F1F5F9;'>{lstm_v["mse"]:.6f}</b>
+            MSE: <b style='color:#F1F5F9;'>{mse_str}</b>
             &nbsp;·&nbsp; Threshold: {lstm_v["threshold"]:.6f}
-            &nbsp;·&nbsp; <b style='color:#EF4444;'>{ratio}× above normal</b>
+            &nbsp;·&nbsp; <b style='color:#EF4444;'>{ratio_str} above normal</b>
           </div>
         </div>""", unsafe_allow_html=True)
     elif rf_v:

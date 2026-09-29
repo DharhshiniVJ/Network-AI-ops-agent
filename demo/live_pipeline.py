@@ -150,6 +150,10 @@ def run_agent(alert_row: pd.DataFrame, full_df: pd.DataFrame,
 
         # Parse verdict from final report text
         report_text = result.get("final_report", "")
+        if isinstance(report_text, list):
+            report_text = "\n".join(str(x) for x in report_text)
+        report_text = str(report_text)
+
         verdict = "UNKNOWN"
         for v in ["LINK_FAILURE","CONGESTION","MTU_MISMATCH","INTERFACE_FLAP",
                   "PACKET_LOSS","FALSE_POSITIVE","ROUTING_LOOP"]:
