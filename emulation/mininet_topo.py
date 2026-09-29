@@ -373,25 +373,39 @@ def run_emulation():
 
     info("*** Building Spine-Leaf Topology\n")
     topo = SpineLeafTopo()
-    net  = Mininet(topo=topo, switch=OVSKernelSwitch, link=TCLink,
-                   controller=Controller)
+
+    # Use OVS in standalone (MAC-learning) mode — no external controller needed.
+    # This guarantees host-to-host traffic actually flows without depending on
+    # an OpenFlow controller installing rules.
+    from functools import partial
+    StandaloneOVS = partial(OVSKernelSwitch, failMode='standalone')
+
+    net = Mininet(topo=topo, switch=StandaloneOVS, link=TCLink, controller=None)
     net.start()
+
+    # Give OVS MAC-learning a moment to warm up
+    time.sleep(3)
 
     info("*** Testing baseline connectivity\n")
     net.pingAll()
 
     h1, h2, h3, h4 = net.get('h1', 'h2', 'h3', 'h4')
 
-    # Start iperf servers on all hosts
-    for h in [h2, h3, h4]:
-        h.cmd('iperf3 -s -D')
-    time.sleep(1)
-
+    # Start background traffic — try iperf3, fall back to iperf
     info("*** Starting background traffic (h1→h2, h1→h3, h1→h4, h2→h3)\n")
-    h1.cmd('iperf3 -c 10.0.0.2 -t 9999 -b 200M &')
-    h1.cmd('iperf3 -c 10.0.0.3 -t 9999 -b 200M &')
-    h1.cmd('iperf3 -c 10.0.0.4 -t 9999 -b 200M &')
-    h2.cmd('iperf3 -c 10.0.0.3 -t 9999 -b 100M &')  # extra cross traffic
+    def start_traffic(src, dst_ip, bw_mbps):
+        r = src.cmd(f'iperf3 -c {dst_ip} -t 9999 -b {bw_mbps}M &')
+        if 'error' in r.lower() or 'not found' in r.lower():
+            src.cmd(f'iperf  -c {dst_ip} -t 9999 -b {bw_mbps}M &')
+
+    for h in [h2, h3, h4]:
+        h.cmd('iperf3 -s -D 2>/dev/null || iperf -s -D')
+    time.sleep(2)
+
+    start_traffic(h1, '10.0.0.2', 200)
+    start_traffic(h1, '10.0.0.3', 200)
+    start_traffic(h1, '10.0.0.4', 200)
+    start_traffic(h2, '10.0.0.3', 100)
     time.sleep(3)
 
     # Probe pair for latency/loss measurement
