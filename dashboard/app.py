@@ -353,30 +353,14 @@ with col3:
     elif not rca and lstm_v:
         st.markdown("""
         <div style='background:#1E293B;border:1px solid #6366F1;border-radius:10px;
-                    padding:20px;text-align:center;'>
-          <div style='color:#6366F1;font-size:0.85rem;font-weight:600;'>
-            Agent is investigating...
+                    padding:28px;text-align:center;'>
+          <div style='color:#6366F1;font-size:1rem;font-weight:700;'>
+            Investigating...
           </div>
-          <div style='color:#475569;font-size:0.78rem;margin-top:6px;'>
-            Calling diagnostic tools, building evidence chain
+          <div style='color:#475569;font-size:0.8rem;margin-top:8px;'>
+            Agent running diagnostic tools. Report incoming.
           </div>
         </div>""", unsafe_allow_html=True)
-
-        # Show tool call progress
-        steps = state.get("agent_steps", [])
-        if steps:
-            st.markdown("<br>", unsafe_allow_html=True)
-            for step in steps[-6:]:
-                stype = step.get("type","think")
-                lc = {"think":"#6366F1","act":"#10B981","observe":"#3B82F6","error":"#EF4444"}.get(stype,"#64748B")
-                label = stype.upper()
-                text = str(step.get("text",""))[:120]
-                st.markdown(f"""
-                <div style='padding:6px 10px;border-radius:6px;margin-bottom:4px;
-                            background:#0F172A;border-left:3px solid {lc};
-                            font-family:monospace;font-size:0.75rem;color:#94A3B8;'>
-                  <span style='color:{lc};font-weight:700;margin-right:8px;'>{label}</span>{text}
-                </div>""", unsafe_allow_html=True)
     else:
         verdict = rca.get("verdict","UNKNOWN") if isinstance(rca,dict) else "UNKNOWN"
         summary = rca.get("summary", str(rca)) if isinstance(rca,dict) else str(rca)
