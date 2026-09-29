@@ -174,111 +174,165 @@ def run_agent(alert_row: pd.DataFrame, full_df: pd.DataFrame,
 
 def run_replay(rf, lstm, speed: float = 10.0):
     """
-    Replay the saved parquet in batches of 30 rows (≈ 1 second of data at 30Hz).
-    speed: multiplier — 10 = replay 10× faster than real-time.
+    Interactive demo loop:
+      - IDLE phase: streams normal-only rows, ticking up the SNMP counter
+      - FAULT phase: when inject_fault.py --sim sets injected_fault in state.json,
+        pull real rows of that fault type from the parquet, run through RF→LSTM→Agent
+      - RECOVER: reset detection state, go back to idle
     """
-    print("[pipeline] Replay mode — loading parquet...")
+    print("[pipeline] Loading parquet...")
     df = pd.read_parquet(ROOT / "data/snmp_telemetry.parquet")
     if "timestamp" in df.columns:
         df = df.sort_values("timestamp").reset_index(drop=True)
+
+    # Separate clean vs fault rows by type
+    normal_df = df[df["is_anomaly"] == 0].reset_index(drop=True)
+    fault_pools = {}
+    for ft in df["anomaly_type"].dropna().unique():
+        if ft not in ("none", "", "normal"):
+            pool = df[df["anomaly_type"] == ft].reset_index(drop=True)
+            if len(pool) > 0:
+                fault_pools[ft] = pool
+    print(f"[pipeline] Normal rows: {len(normal_df):,} | Fault types: {list(fault_pools.keys())}")
 
     state = fresh_state()
     state["status"] = "running"
     write_state(state)
 
-    BATCH = 50    # rows per tick
-    total = len(df)
-    rf_feat_names = rf.pipeline.get_feature_names() if hasattr(rf, 'pipeline') else None
+    BATCH       = 50
+    normal_idx  = 0
+    context_buf = []       # rolling buffer of recent rows for LSTM context
 
-    all_scores = np.zeros(total)
+    print("[pipeline] Streaming normal traffic. Click a fault button in the dashboard.")
 
-    print(f"[pipeline] Streaming {total:,} rows in batches of {BATCH}...")
+    while True:
+        # ── Check for injected fault ───────────────────────────────────────────
+        current_state = load_state()
+        injected = current_state.get("injected_fault")
 
-    for start in range(0, total, BATCH):
-        batch   = df.iloc[start: start + BATCH].copy()
-        context = df.iloc[max(0, start - 200): start + BATCH].copy()
+        if injected and injected != "recover":
+            fault_type = injected
+            print(f"[pipeline] FAULT INJECTED: {fault_type}")
 
-        # ── Tier 1: Random Forest ──────────────────────────────────────────────
-        try:
-            preds_rf, scores_rf = rf.predict(context)
-            tier1_hit = int(preds_rf[-len(batch):].sum())
-        except Exception:
-            tier1_hit = 0
+            # Load fault scenario rows (up to 300 rows)
+            if fault_type in fault_pools:
+                fault_rows = fault_pools[fault_type].head(300).copy()
+            else:
+                # Unknown fault type — pick any anomalous rows
+                fault_rows = df[df["is_anomaly"] == 1].head(300).copy()
 
-        # ── Tier 2: LSTM ──────────────────────────────────────────────────────
-        try:
-            _, scores_lstm = lstm.predict(context)
-            batch_scores = scores_lstm[-len(batch):]
-            all_scores[start: start + len(batch)] = batch_scores
-            tier2_hit = int((batch_scores >= lstm.optimal_threshold).sum())
-        except Exception:
-            tier2_hit  = 0
-            batch_scores = np.zeros(len(batch))
+            # Build context: last 200 normal rows + fault rows
+            ctx_normal = normal_df.iloc[max(0, normal_idx - 200): normal_idx].copy()
+            full_context = pd.concat([ctx_normal, fault_rows], ignore_index=True)
 
-        state["rows_seen"]   += len(batch)
-        state["tier1_flags"] += tier1_hit
-        state["tier2_flags"] += tier2_hit
-        state["last_update"]  = str(datetime.now())
-
-        # RF verdict — capture first hit
-        if tier1_hit > 0 and state.get("rf_verdict") is None:
+            # ── Tier 1: RF ────────────────────────────────────────────────────
+            state["status"] = "running"
             try:
-                idx = np.where(preds_rf[-len(batch):])[0][0]
-                fault_row = batch.iloc[idx]
-                rf_conf   = float(scores_rf[-len(batch):][idx])
-                state["rf_verdict"] = {
-                    "fault":      str(fault_row.get("anomaly_type","anomaly")).replace("_"," ").title(),
-                    "confidence": round(rf_conf * 100, 1),
-                    "device":     str(fault_row.get("device_id","?")),
-                    "interface":  str(fault_row.get("interface_id","?")),
-                }
-            except Exception:
-                state["rf_verdict"] = {"fault":"Anomaly","confidence":0,"device":"?","interface":"?"}
+                preds_rf, scores_rf = rf.predict(full_context)
+                tier1_hit = int(preds_rf[-len(fault_rows):].sum())
+                state["tier1_flags"] += tier1_hit
 
-        # LSTM verdict — capture first hit
-        if tier2_hit > 0 and state.get("lstm_verdict") is None:
+                if tier1_hit > 0:
+                    idx = np.where(preds_rf[-len(fault_rows):])[0][0]
+                    fr  = fault_rows.iloc[idx]
+                    rf_conf = float(scores_rf[-len(fault_rows):][idx])
+                    state["rf_verdict"] = {
+                        "fault":      fault_type.replace("_", " ").title(),
+                        "confidence": round(rf_conf * 100, 1),
+                        "device":     str(fr.get("device_id", "?")),
+                        "interface":  str(fr.get("interface_id", "?")),
+                    }
+                    print(f"[pipeline] RF flagged: {state['rf_verdict']}")
+                write_state(state)
+            except Exception as e:
+                print(f"[pipeline] RF error: {e}")
+
+            time.sleep(1.5)   # let dashboard show RF result
+
+            # ── Tier 2: LSTM ──────────────────────────────────────────────────
             try:
-                top_mse = float(batch_scores.max())
-                state["lstm_verdict"] = {
-                    "mse":       round(top_mse, 6),
-                    "threshold": round(float(lstm.optimal_threshold), 6),
-                    "ratio":     round(top_mse / max(float(lstm.optimal_threshold), 1e-9), 2),
+                _, scores_lstm = lstm.predict(full_context)
+                batch_scores = scores_lstm[-len(fault_rows):]
+                tier2_hit = int((batch_scores >= lstm.optimal_threshold).sum())
+                state["tier2_flags"] += tier2_hit
+
+                if tier2_hit > 0:
+                    top_mse = float(batch_scores.max())
+                    state["lstm_verdict"] = {
+                        "mse":       round(top_mse, 6),
+                        "threshold": round(float(lstm.optimal_threshold), 6),
+                        "ratio":     round(top_mse / max(float(lstm.optimal_threshold), 1e-9), 2),
+                    }
+                    print(f"[pipeline] LSTM confirmed: MSE={top_mse:.6f}")
+                write_state(state)
+            except Exception as e:
+                print(f"[pipeline] LSTM error: {e}")
+                scores_lstm = np.zeros(len(full_context))
+                tier2_hit = 0
+
+            time.sleep(1.5)   # let dashboard show LSTM result
+
+            # ── Tier 3: Agent ─────────────────────────────────────────────────
+            if tier2_hit > 0:
+                flagged = fault_rows.iloc[np.where(batch_scores >= lstm.optimal_threshold)[0]]
+                alert_row = flagged.head(1)
+                alert_entry = {
+                    "ts":        str(fault_rows.iloc[0].get("timestamp", str(datetime.now()))),
+                    "device":    str(alert_row.iloc[0].get("device_id", "unknown")),
+                    "interface": str(alert_row.iloc[0].get("interface_id", "?")),
+                    "mse":       round(float(batch_scores.max()), 6),
+                    "fault":     fault_type,
                 }
-            except Exception:
-                state["lstm_verdict"] = {"mse":0,"threshold":0,"ratio":0}
+                state["alerts"].insert(0, alert_entry)
+                state["alerts"] = state["alerts"][:20]
 
-        # New alerts
-        if tier2_hit > 0:
-            flagged = batch.iloc[np.where(batch_scores >= lstm.optimal_threshold)[0]]
-            for _, row in flagged.head(3).iterrows():
-                alert = {
-                    "ts":        str(row.get("timestamp", "")),
-                    "device":    str(row.get("device_id", "unknown")),
-                    "interface": str(row.get("interface_id", "?")),
-                    "mse":       float(batch_scores[flagged.index.get_loc(row.name)]) if row.name in flagged.index else 0.0,
-                    "fault":     str(row.get("anomaly_type", "unknown")),
-                }
-                existing = [a["ts"] + a["device"] for a in state["alerts"]]
-                if alert["ts"] + alert["device"] not in existing:
-                    state["alerts"].insert(0, alert)
-                    state["alerts"] = state["alerts"][:20]
+                state["status"] = "investigating"
+                write_state(state)
 
-                    if len(state["alerts"]) <= 5 and state["rca_report"] is None:
-                        state["status"] = "investigating"
-                        write_state(state)
-                        alert_df = flagged[flagged.index == row.name].copy()
-                        if len(alert_df) == 0:
-                            alert_df = flagged.head(1)
-                        run_agent(alert_df, context, all_scores[:start + BATCH], state)
-                        state["status"] = "running"
+                all_scores = np.zeros(len(full_context))
+                all_scores[-len(scores_lstm):] = scores_lstm
+                run_agent(alert_row, full_context, all_scores, state)
+                state["status"] = "running"
 
-        write_state(state)
-        time.sleep(BATCH / (30.0 * speed))
+            # Clear the injected fault so it doesn't re-trigger
+            state["injected_fault"] = None
+            write_state(state)
+            print("[pipeline] Fault cycle complete. Waiting for next injection or Recover.")
+
+            # Wait here until user clicks Recover
+            while True:
+                cs = load_state()
+                if cs.get("injected_fault") == "recover" or cs.get("injected_fault") is None:
+                    break
+                time.sleep(1)
+
+        elif injected == "recover":
+            # Reset detection state, keep SNMP counter
+            print("[pipeline] Recovering — resetting detection state.")
+            rows_seen = state.get("rows_seen", 0)
+            t1 = state.get("tier1_flags", 0)
+            t2 = state.get("tier2_flags", 0)
+            alerts = state.get("alerts", [])
+            state = fresh_state()
+            state["status"] = "running"
+            state["rows_seen"]   = rows_seen
+            state["tier1_flags"] = t1
+            state["tier2_flags"] = t2
+            state["alerts"]      = alerts
+            write_state(state)
+
+        else:
+            # ── IDLE: stream normal rows ───────────────────────────────────────
+            end = min(normal_idx + BATCH, len(normal_df))
+            batch = normal_df.iloc[normal_idx: end].copy()
+            normal_idx = end if end < len(normal_df) else 0   # loop
+
+            state["rows_seen"]  += len(batch)
+            state["last_update"] = str(datetime.now())
+            write_state(state)
+            time.sleep(BATCH / (30.0 * speed))
 
 
-    state["status"] = "done"
-    write_state(state)
-    print("[pipeline] Replay complete.")
 
 
 def run_live(csv_path: str, rf, lstm):
