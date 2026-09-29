@@ -391,21 +391,19 @@ def run_emulation():
 
     h1, h2, h3, h4 = net.get('h1', 'h2', 'h3', 'h4')
 
-    # Start background traffic — try iperf3, fall back to iperf
-    info("*** Starting background traffic (h1→h2, h1→h3, h1→h4, h2→h3)\n")
+    # Start lightweight background traffic — 10 Mbps per stream (laptop-safe)
+    info("*** Starting background traffic (h1→h2, h1→h3)\n")
     def start_traffic(src, dst_ip, bw_mbps):
         r = src.cmd(f'iperf3 -c {dst_ip} -t 9999 -b {bw_mbps}M &')
         if 'error' in r.lower() or 'not found' in r.lower():
             src.cmd(f'iperf  -c {dst_ip} -t 9999 -b {bw_mbps}M &')
 
-    for h in [h2, h3, h4]:
+    for h in [h2, h3]:
         h.cmd('iperf3 -s -D 2>/dev/null || iperf -s -D')
     time.sleep(2)
 
-    start_traffic(h1, '10.0.0.2', 200)
-    start_traffic(h1, '10.0.0.3', 200)
-    start_traffic(h1, '10.0.0.4', 200)
-    start_traffic(h2, '10.0.0.3', 100)
+    start_traffic(h1, '10.0.0.2', 10)   # 10 Mbps — laptop safe
+    start_traffic(h1, '10.0.0.3', 10)   # 10 Mbps
     time.sleep(3)
 
     # Probe pair for latency/loss measurement
