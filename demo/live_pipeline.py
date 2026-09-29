@@ -424,6 +424,12 @@ if __name__ == "__main__":
     if not os.environ.get("GOOGLE_API_KEY"):
         raise EnvironmentError("Set GOOGLE_API_KEY before running: export GOOGLE_API_KEY=your_key")
 
+    # Wipe stale state immediately — dashboard shows "loading" while models load
+    boot_state = fresh_state()
+    boot_state["status"] = "loading"
+    write_state(boot_state)
+    print("[pipeline] State reset. Loading models...")
+
     rf_model, lstm_model = load_models()
 
     if args.replay:
