@@ -48,15 +48,17 @@ def load_state() -> dict:
 
 def fresh_state() -> dict:
     return {
-        "status":       "idle",
-        "rows_seen":    0,
-        "tier1_flags":  0,
-        "tier2_flags":  0,
-        "alerts":       [],        # list of {device, interface, fault, ts}
-        "agent_steps":  [],        # list of {type, text} — streams agent reasoning
-        "rca_report":   None,
+        "status":         "idle",
+        "rows_seen":      0,
+        "tier1_flags":    0,
+        "tier2_flags":    0,
+        "alerts":         [],
+        "agent_steps":    [],
+        "rca_report":     None,
+        "rf_verdict":     None,
+        "lstm_verdict":   None,
         "injected_fault": None,
-        "last_update":  str(datetime.now()),
+        "last_update":    str(datetime.now()),
     }
 
 # ── Model loader ──────────────────────────────────────────────────────────────
@@ -101,7 +103,13 @@ def run_agent(alert_row: pd.DataFrame, full_df: pd.DataFrame,
         except Exception:
             syslogs = []
 
-        build_network_state(full_df, syslogs, topo, lstm_scores, full_df)
+        # Trim scores to match full_df length to avoid length mismatch
+        scores_aligned = lstm_scores[-len(full_df):] if len(lstm_scores) >= len(full_df) \
+                         else np.pad(lstm_scores, (len(full_df) - len(lstm_scores), 0))
+        try:
+            build_network_state(full_df, syslogs, topo, scores_aligned, full_df)
+        except Exception:
+            pass   # agent still runs without MSE in network state
 
         llm = get_llm()
 
@@ -212,6 +220,33 @@ def run_replay(rf, lstm, speed: float = 10.0):
         state["tier2_flags"] += tier2_hit
         state["last_update"]  = str(datetime.now())
 
+        # RF verdict — capture first hit
+        if tier1_hit > 0 and state.get("rf_verdict") is None:
+            try:
+                idx = np.where(preds_rf[-len(batch):])[0][0]
+                fault_row = batch.iloc[idx]
+                rf_conf   = float(scores_rf[-len(batch):][idx])
+                state["rf_verdict"] = {
+                    "fault":      str(fault_row.get("anomaly_type","anomaly")).replace("_"," ").title(),
+                    "confidence": round(rf_conf * 100, 1),
+                    "device":     str(fault_row.get("device_id","?")),
+                    "interface":  str(fault_row.get("interface_id","?")),
+                }
+            except Exception:
+                state["rf_verdict"] = {"fault":"Anomaly","confidence":0,"device":"?","interface":"?"}
+
+        # LSTM verdict — capture first hit
+        if tier2_hit > 0 and state.get("lstm_verdict") is None:
+            try:
+                top_mse = float(batch_scores.max())
+                state["lstm_verdict"] = {
+                    "mse":       round(top_mse, 6),
+                    "threshold": round(float(lstm.optimal_threshold), 6),
+                    "ratio":     round(top_mse / max(float(lstm.optimal_threshold), 1e-9), 2),
+                }
+            except Exception:
+                state["lstm_verdict"] = {"mse":0,"threshold":0,"ratio":0}
+
         # New alerts
         if tier2_hit > 0:
             flagged = batch.iloc[np.where(batch_scores >= lstm.optimal_threshold)[0]]
@@ -223,13 +258,11 @@ def run_replay(rf, lstm, speed: float = 10.0):
                     "mse":       float(batch_scores[flagged.index.get_loc(row.name)]) if row.name in flagged.index else 0.0,
                     "fault":     str(row.get("anomaly_type", "unknown")),
                 }
-                # Avoid duplicates
                 existing = [a["ts"] + a["device"] for a in state["alerts"]]
                 if alert["ts"] + alert["device"] not in existing:
                     state["alerts"].insert(0, alert)
-                    state["alerts"] = state["alerts"][:20]   # keep last 20
+                    state["alerts"] = state["alerts"][:20]
 
-                    # ── Tier 3: Agent (only for first new alert) ──────────────
                     if len(state["alerts"]) <= 5 and state["rca_report"] is None:
                         state["status"] = "investigating"
                         write_state(state)
@@ -240,7 +273,8 @@ def run_replay(rf, lstm, speed: float = 10.0):
                         state["status"] = "running"
 
         write_state(state)
-        time.sleep(BATCH / (30.0 * speed))   # simulate real-time at given speed
+        time.sleep(BATCH / (30.0 * speed))
+
 
     state["status"] = "done"
     write_state(state)
