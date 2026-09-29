@@ -266,11 +266,18 @@ def run_replay(rf, lstm, speed: float = 10.0):
             fault_type = injected
             print(f"[pipeline] FAULT INJECTED: {fault_type}")
 
+            # Clear previous detection results before new cycle
+            state["rf_verdict"]   = None
+            state["lstm_verdict"] = None
+            state["rca_report"]   = None
+            state["agent_steps"]  = []
+            state["injected_fault"] = None   # clear immediately so button resets
+            write_state(state)
+
             # Load fault scenario rows (up to 300 rows)
             if fault_type in fault_pools:
                 fault_rows = fault_pools[fault_type].head(300).copy()
             else:
-                # Unknown fault type — pick any anomalous rows
                 fault_rows = df[df["is_anomaly"] == 1].head(300).copy()
 
             # Build context: last 200 normal rows + fault rows
