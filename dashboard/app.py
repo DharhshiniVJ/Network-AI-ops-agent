@@ -168,9 +168,34 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
+# ── Inject Fault Controls (inline on main page) ───────────────────────────────
+fc1, fc2, fc3, fc4, fc5, fc6, fc7 = st.columns([1,1,1,1,1,1,1])
+faults = ["link_failure","congestion","interface_flap","mtu_mismatch","packet_loss"]
+cols   = [fc1, fc2, fc3, fc4, fc5]
+FAULT_LABELS = {
+    "link_failure":   "Link Failure",
+    "congestion":     "Congestion",
+    "interface_flap": "Interface Flap",
+    "mtu_mismatch":   "MTU Mismatch",
+    "packet_loss":    "Packet Loss",
+}
+for col, fault in zip(cols, faults):
+    with col:
+        fc = FAULT_COLORS.get(fault, "#6366F1")
+        if st.button(FAULT_LABELS[fault], key=f"inj_{fault}", use_container_width=True):
+            subprocess.Popen(["python3","demo/inject_fault.py", fault,"--sim"], cwd=str(ROOT))
+with fc6:
+    if st.button("Recover", use_container_width=True):
+        subprocess.Popen(["python3","demo/inject_fault.py","recover","--sim"], cwd=str(ROOT))
+with fc7:
+    st.write("")  # spacer
+
+st.markdown("<div style='margin-bottom:8px;'></div>", unsafe_allow_html=True)
+
 # ── FUNNEL ROW ────────────────────────────────────────────────────────────────
 st.markdown("<div class='card-title' style='margin-bottom:10px;'>THREE-TIER DETECTION FUNNEL</div>",
             unsafe_allow_html=True)
+
 
 rows  = state.get("rows_seen",0)
 t1    = state.get("tier1_flags",0)
