@@ -210,7 +210,7 @@ def run_agent(alert_row: pd.DataFrame, full_df: pd.DataFrame,
                 break
 
         state["agent_steps"] = steps_log
-        state["rca_report"]  = {"verdict": verdict, "summary": report_text[:600]}
+        state["rca_report"]  = {"verdict": verdict, "summary": report_text}
         write_state(state)
 
     except Exception as e:

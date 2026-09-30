@@ -375,7 +375,7 @@ with col3:
 
           <div class='rca-section'>
             <div class='rca-section-title'>Evidence Summary</div>
-            <div class='rca-text'>{summary[:400]}</div>
+            <div class='rca-text' style='white-space: pre-wrap;'>{summary}</div>
           </div>
 
           <div class='rca-section' style='margin-top:14px;padding-top:14px;
