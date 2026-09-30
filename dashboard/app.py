@@ -368,22 +368,15 @@ with col3:
         remediation = REMEDIATION.get(verdict, "Review affected interfaces and consult network team.")
 
         st.markdown(f"""
-        <div class='rca-card'>
-          <span class='verdict-pill' style='background:{vc}22;color:{vc};border:1px solid {vc};'>
+        <div class='rca-card' style='padding-bottom: 0px; border-bottom: none;'>
+          <span class='verdict-pill' style='background:{vc}22;color:{vc};border:1px solid {vc}; margin-bottom: 15px; display: inline-block;'>
             {verdict.replace("_"," ")}
           </span>
-
-          <div class='rca-section'>
-            <div class='rca-section-title'>Evidence Summary</div>
-            <div class='rca-text' style='white-space: pre-wrap;'>{summary}</div>
-          </div>
-
-          <div class='rca-section' style='margin-top:14px;padding-top:14px;
-                border-top:1px solid #334155;'>
-            <div class='rca-section-title'>Recommended Remediation</div>
-            <div class='rca-text' style='color:#10B981;'>{remediation}</div>
-          </div>
         </div>""", unsafe_allow_html=True)
+
+        # Render the AI's markdown report natively so formatting (bold, lists, code) works perfectly
+        with st.container():
+            st.markdown(summary)
 
 # ── Sidebar controls ──────────────────────────────────────────────────────────
 with st.sidebar:
